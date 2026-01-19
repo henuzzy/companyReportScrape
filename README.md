@@ -126,6 +126,37 @@ python main.py
 3. 如果遇到下载失败，查看 `logs/error.log` 了解详细错误信息
 4. 股票代码格式：A股代码如 `002202`、`000001` 等
 
+## 打包成exe文件
+
+### 快速打包
+
+1. **安装PyInstaller**：
+   ```bash
+   pip install pyinstaller
+   ```
+
+2. **运行打包脚本**：
+   ```bash
+   python build_exe.py
+   ```
+
+3. **获取exe文件**：
+   打包完成后，exe文件位于 `dist/companyReportScrape.exe`
+
+### 详细说明
+
+- 打包配置：`build_exe.spec`
+- 打包脚本：`build_exe.py`
+- 详细文档：`BUILD.md`
+- 快速指南：`QUICK_BUILD.md`
+
+### 打包后的特点
+
+- ✅ 单个exe文件，无需安装Python环境
+- ✅ 配置文件已打包，无需额外文件
+- ✅ 体积优化，排除不必要的库
+- ✅ 用户首次运行自动创建必要文件夹
+
 ## 许可证
 
 本项目仅供学习交流使用。

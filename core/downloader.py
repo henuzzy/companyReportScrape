@@ -179,8 +179,9 @@ class ReportDownloader:
         
         # 临时文件名
         temp_filename = filename + '.tmp'
-        temp_path = download_dir / temp_filename
-        final_path = download_dir / filename
+        # 使用字符串路径，避免Path对象的编码问题
+        temp_path_str = os.path.join(str(download_dir), temp_filename)
+        final_path_str = os.path.join(str(download_dir), filename)
         
         try:
             # 下载文件（延迟已在download_reports方法中处理）
@@ -190,10 +191,7 @@ class ReportDownloader:
                 safe_log_error("下载失败 %s: HTTP %s", title, response.status_code)
                 return False
             
-            # 写入临时文件（使用字符串路径，避免Path对象的编码问题）
-            temp_path_str = os.path.join(str(download_dir), temp_filename)
-            final_path_str = os.path.join(str(download_dir), filename)
-            
+            # 写入临时文件
             with open(temp_path_str, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
@@ -225,8 +223,6 @@ class ReportDownloader:
         except Exception as e:
             safe_log_error("下载失败 %s: %s", title, str(e))
             # 清理临时文件
-            import os
-            temp_path_str = str(temp_path)
             if os.path.exists(temp_path_str):
                 try:
                     os.remove(temp_path_str)

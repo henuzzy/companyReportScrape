@@ -3,6 +3,7 @@
 """
 import json
 import os
+import sys
 from pathlib import Path
 
 
@@ -19,9 +20,34 @@ class Config:
         self.config_file = config_file
         self.config = self._load_config()
     
+    def _get_resource_path(self, relative_path):
+        """
+        获取资源文件的绝对路径
+        支持PyInstaller打包后的资源路径
+        
+        Args:
+            relative_path: 相对路径，如 'config/config.json'
+        
+        Returns:
+            Path: 资源文件的绝对路径
+        """
+        try:
+            # PyInstaller打包后会设置这个属性
+            base_path = Path(sys._MEIPASS)
+        except AttributeError:
+            # 开发环境，使用脚本所在目录
+            base_path = Path(__file__).parent.parent
+        
+        return base_path / relative_path
+    
     def _load_config(self):
         """加载配置文件"""
-        config_path = Path(self.config_file)
+        # 首先尝试从打包资源中加载
+        config_path = self._get_resource_path(self.config_file)
+        
+        # 如果打包资源中不存在，尝试从当前目录加载（开发环境）
+        if not config_path.exists():
+            config_path = Path(self.config_file)
         
         # 如果配置文件不存在，使用默认配置
         if not config_path.exists():
@@ -67,7 +93,25 @@ class Config:
     def get_download_base_path(self):
         """获取下载基础路径"""
         path = self.get('download_base_path', './downloads')
-        return Path(path).absolute()
+        
+        # 如果是相对路径，转换为绝对路径
+        path_obj = Path(path)
+        if not path_obj.is_absolute():
+            # 在打包后的exe中，使用exe所在目录作为基准
+            try:
+                # PyInstaller打包后会设置这个属性
+                if hasattr(sys, '_MEIPASS'):
+                    # 打包后的exe，使用exe所在目录（不是临时解压目录）
+                    exe_dir = Path(sys.executable).parent
+                    path_obj = exe_dir / path
+                else:
+                    # 开发环境，使用当前工作目录
+                    path_obj = path_obj.absolute()
+            except:
+                # 如果出错，使用当前工作目录
+                path_obj = path_obj.absolute()
+        
+        return path_obj
     
     def get_log_file(self):
         """获取日志文件路径"""

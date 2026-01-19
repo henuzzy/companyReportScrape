@@ -2,3 +2,6 @@ requests>=2.31.0
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
 
+# 打包工具（可选，仅在需要打包时安装）
+# pyinstaller>=6.0.0
+

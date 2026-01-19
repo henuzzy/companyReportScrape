@@ -5,6 +5,7 @@ GUI主窗口
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import threading
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -32,7 +33,9 @@ class MainWindow:
         self.file_path_var = tk.StringVar()
         self.start_year_var = tk.StringVar()
         self.end_year_var = tk.StringVar()
-        self.download_path_var = tk.StringVar(value=str(self.config.get_download_base_path()))
+        # 下载路径默认留空：避免打包后的exe展示本机绝对路径（如 dist\downloads）
+        # 实际下载时若留空，会自动回退到 config 中的 download_base_path
+        self.download_path_var = tk.StringVar(value="")
         self.is_running = False
         
         # 创建界面
@@ -125,9 +128,13 @@ class MainWindow:
     
     def _select_download_path(self):
         """选择下载路径"""
+        initial_dir = self.download_path_var.get().strip()
+        if not initial_dir:
+            # 留空时，优先使用用户主目录；如果不可用则使用当前工作目录
+            initial_dir = str(Path.home()) if str(Path.home()) else os.getcwd()
         path = filedialog.askdirectory(
             title="选择下载路径",
-            initialdir=self.download_path_var.get()
+            initialdir=initial_dir
         )
         if path:
             self.download_path_var.set(path)
@@ -259,7 +266,10 @@ class MainWindow:
             self.root.after(0, lambda: self._log(f"共找到 {len(all_reports)} 个年报需要下载"))
             
             # 开始下载
-            download_path = self.download_path_var.get()
+            download_path = self.download_path_var.get().strip()
+            if not download_path:
+                # GUI留空时回退到配置默认路径（打包后为 exe 同目录下的 ./downloads）
+                download_path = str(self.config.get_download_base_path())
             success_count, failed_count = downloader.download_reports(
                 all_reports,
                 base_path=download_path
