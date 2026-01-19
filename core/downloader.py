@@ -177,24 +177,10 @@ class ReportDownloader:
         pdf_url = task['pdf_url']
         download_dir = task['download_dir']
         
-        # 【调试日志】打印文件名信息
-        print(f"[编码调试] 下载文件 - 股票代码: {stock_code}")
-        print(f"[编码调试] 原始标题: {repr(title)}")
-        print(f"[编码调试] 处理后的文件名: {repr(filename)}")
-        print(f"[编码调试] 文件名类型: {type(filename)}")
-        try:
-            print(f"[编码调试] 文件名UTF-8编码测试: {filename.encode('utf-8')}")
-            print(f"[编码调试] 文件名系统编码测试: {filename.encode(sys.getfilesystemencoding() if sys.getfilesystemencoding() else 'utf-8')}")
-        except Exception as e:
-            print(f"[编码调试] ✗ 文件名编码测试失败: {type(e).__name__}: {e}")
-        
         # 临时文件名
         temp_filename = filename + '.tmp'
         temp_path = download_dir / temp_filename
         final_path = download_dir / filename
-        
-        print(f"[编码调试] 临时文件路径: {repr(str(temp_path))}")
-        print(f"[编码调试] 最终文件路径: {repr(str(final_path))}")
         
         try:
             # 下载文件（延迟已在download_reports方法中处理）
@@ -205,51 +191,33 @@ class ReportDownloader:
                 return False
             
             # 写入临时文件（使用字符串路径，避免Path对象的编码问题）
-            print(f"[编码调试] 开始写入临时文件...")
-            temp_path_str = str(temp_path)
-            print(f"[编码调试] 临时文件路径(字符串): {repr(temp_path_str)}")
-            try:
-                with open(temp_path_str, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                print(f"[编码调试] ✓ 临时文件写入成功")
-            except Exception as e:
-                print(f"[编码调试] ✗ 临时文件写入失败: {type(e).__name__}: {e}")
-                raise
+            temp_path_str = os.path.join(str(download_dir), temp_filename)
+            final_path_str = os.path.join(str(download_dir), filename)
+            
+            with open(temp_path_str, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
             
             # 检查文件大小（至少应该大于1KB）
-            import os
             if os.path.getsize(temp_path_str) < 1024:
                 safe_log_error("下载文件异常小 %s: %s bytes", title, os.path.getsize(temp_path_str))
                 try:
-                    os.remove(temp_path_str)  # 删除临时文件
+                    os.remove(temp_path_str)
                 except:
                     pass
                 return False
             
             # 重命名为正式文件（使用os.rename避免Path对象的编码转换问题）
-            print(f"[编码调试] 开始重命名文件...")
             try:
-                # 使用os.rename直接操作，避免Path对象的编码转换
-                import os
-                temp_path_str = str(temp_path)
-                final_path_str = str(final_path)
-                print(f"[编码调试] 重命名: {repr(temp_path_str)} -> {repr(final_path_str)}")
                 os.rename(temp_path_str, final_path_str)
-                print(f"[编码调试] ✓ 文件重命名成功")
-            except (OSError, UnicodeEncodeError, UnicodeDecodeError) as e:
-                print(f"[编码调试] ✗ os.rename失败: {type(e).__name__}: {e}")
-                print(f"[编码调试] 尝试使用shutil.move...")
+            except (OSError, UnicodeEncodeError, UnicodeDecodeError):
                 # 如果重命名失败，尝试使用shutil
                 try:
                     import shutil
-                    shutil.move(str(temp_path), str(final_path))
-                    print(f"[编码调试] ✓ shutil.move成功")
+                    shutil.move(temp_path_str, final_path_str)
                 except Exception as e2:
-                    print(f"[编码调试] ✗ shutil.move也失败: {type(e).__name__}: {e2}")
                     safe_log_error("重命名文件失败 %s: %s", title, str(e2))
-                    # 如果都失败了，保留临时文件，让用户手动处理
                     return False
             
             return True
