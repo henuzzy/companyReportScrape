@@ -1,0 +1,27 @@
+# 虚拟环境
+.venv
+venv/
+env/
+
+# 下载文件夹（运行时生成的文件）
+downloads/
+
+# 日志文件夹（运行时生成的文件）
+logs/
+
+# Python 缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE 配置文件（可选，如果你使用PyCharm或VSCode）
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 操作系统文件
+.DS_Store
+Thumbs.db

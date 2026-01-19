@@ -1,0 +1,14 @@
+{
+  "concurrent_downloads": 10,
+  "download_base_path": "./downloads",
+  "log_level": "ERROR",
+  "log_file": "./logs/error.log",
+  "url_formats": [
+    "https://vip.stock.finance.sina.com.cn/corp/go.php/vCB_Bulletin/stockid/{code}/page_type/ndbg.phtml",
+    "https://money.finance.sina.com.cn/corp/view/vCB_Bulletin.php?stockid={code}&type=list&page_type=ndbg"
+  ],
+  "base_url": "https://money.finance.sina.com.cn",
+  "request_timeout": 30
+}
+
+
