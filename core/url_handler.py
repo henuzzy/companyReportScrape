@@ -15,6 +15,7 @@ class URLHandler:
     
     def __init__(self):
         self.config = get_config()
+        # A股列表页 URL 格式和基础域名统一从配置文件读取
         self.url_formats = self.config.get_url_formats()
         self.base_url = self.config.get_base_url()
         self.timeout = self.config.get_request_timeout()

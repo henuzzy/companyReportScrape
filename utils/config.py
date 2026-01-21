@@ -74,7 +74,7 @@ class Config:
             "download_base_path": "./downloads",
             "log_level": "ERROR",
             "log_file": "./logs/error.log",
-            # 按市场划分的站点配置（目前仅实现 A股，港股/美股后续补充）
+            # 按市场划分的站点配置
             "markets": {
                 "CN": {
                     "url_formats": [
@@ -84,8 +84,21 @@ class Config:
                     "base_url": "https://money.finance.sina.com.cn"
                 },
                 "HK": {
-                    "url_formats": [],
-                    "base_url": ""
+                    "search_url": "https://www1.hkexnews.hk/search/titlesearch.xhtml?lang=zh",
+                    "prefix_url": "https://www1.hkexnews.hk/search/prefix.do",
+                    "base_url": "https://www1.hkexnews.hk",
+                    "default_params": {
+                        "lang": "ZH",
+                        "category": "0",
+                        "market": "SEHK",
+                        "searchType": "1",
+                        "documentType": "-1",
+                        "t1code": "40000",
+                        "t2Gcode": "-2",
+                        "t2code": "40100",
+                        "MB-Daterange": "0",
+                        "title": ""
+                    }
                 },
                 "US": {
                     "url_formats": [],
@@ -154,6 +167,49 @@ class Config:
             if isinstance(cn_cfg, dict) and 'base_url' in cn_cfg:
                 return cn_cfg['base_url']
         return self.get('base_url', 'https://money.finance.sina.com.cn')
+
+    # ---------------- 市场级配置访问方法 ----------------
+    def get_market_config(self, market: str):
+        """获取指定市场的完整配置字典，如 'CN' / 'HK' / 'US'"""
+        markets = self.get('markets') or {}
+        if isinstance(markets, dict):
+            return markets.get(market, {})
+        return {}
+
+    def get_market_base_url(self, market: str):
+        """获取指定市场的 base_url"""
+        m_cfg = self.get_market_config(market)
+        return m_cfg.get('base_url', '')
+
+    def get_hk_search_url(self):
+        """获取港股搜索页 URL"""
+        m_cfg = self.get_market_config('HK')
+        return m_cfg.get('search_url', 'https://www1.hkexnews.hk/search/titlesearch.xhtml?lang=zh')
+
+    def get_hk_prefix_url(self):
+        """获取港股 prefix 查询 URL"""
+        m_cfg = self.get_market_config('HK')
+        return m_cfg.get('prefix_url', 'https://www1.hkexnews.hk/search/prefix.do')
+
+    def get_hk_default_params(self):
+        """获取港股搜索接口默认参数模板"""
+        m_cfg = self.get_market_config('HK')
+        default_params = {
+            "lang": "ZH",
+            "category": "0",
+            "market": "SEHK",
+            "searchType": "1",
+            "documentType": "-1",
+            "t1code": "40000",
+            "t2Gcode": "-2",
+            "t2code": "40100",
+            "MB-Daterange": "0",
+            "title": ""
+        }
+        cfg_params = m_cfg.get('default_params')
+        if isinstance(cfg_params, dict):
+            default_params.update(cfg_params)
+        return default_params
     
     def get_request_timeout(self):
         """获取请求超时时间"""

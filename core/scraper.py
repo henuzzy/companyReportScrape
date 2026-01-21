@@ -324,17 +324,20 @@ class HKReportScraper:
       3. 解析包含 /listedco/listconews/ 且以 .pdf 结尾的链接
     """
 
-    SEARCH_URL = "https://www1.hkexnews.hk/search/titlesearch.xhtml?lang=zh"
-    PREFIX_URL = "https://www1.hkexnews.hk/search/prefix.do"
-    BASE_URL = "https://www1.hkexnews.hk"
-
     def __init__(self):
         self.config = get_config()
         self.timeout = self.config.get_request_timeout()
+
+        # 所有港股相关 URL 从配置中读取，避免硬编码
+        self.search_url = self.config.get_hk_search_url()
+        self.prefix_url = self.config.get_hk_prefix_url()
+        self.base_url = self.config.get_market_base_url('HK') or "https://www1.hkexnews.hk"
+        self.default_params = self.config.get_hk_default_params()
+
         # 统一使用现有的移动端 User-Agent
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36',
-            'Referer': self.SEARCH_URL,
+            'Referer': self.search_url,
         }
 
     def _get_stock_id(self, stock_code: str) -> Optional[int]:
@@ -349,7 +352,7 @@ class HKReportScraper:
             "market": "SEHK",
         }
         try:
-            resp = requests.get(self.PREFIX_URL, params=params, headers=self.headers, timeout=self.timeout)
+            resp = requests.get(self.prefix_url, params=params, headers=self.headers, timeout=self.timeout)
             resp.raise_for_status()
 
             text = resp.text.strip()
@@ -377,24 +380,16 @@ class HKReportScraper:
         """
         按年份搜索年报 HTML（参数设计与 test.py 保持一致）
         """
-        payload = {
-            "lang": "ZH",
-            "category": "0",
-            "market": "SEHK",
-            "searchType": "1",
-            "documentType": "-1",
-            "t1code": "40000",
-            "t2Gcode": "-2",
-            "t2code": "40100",
+        # 使用配置中的默认参数模板，填充年份相关字段
+        payload = self.default_params.copy()
+        payload.update({
             "stockId": str(stock_id),
             # 日期范围：year0101 ~ year+1 1231
             "from": f"{year}0101",
             "to": f"{year + 1}1231",
-            "MB-Daterange": "0",
-            "title": "",
-        }
+        })
         try:
-            resp = requests.post(self.SEARCH_URL, data=payload, headers=self.headers, timeout=self.timeout)
+            resp = requests.post(self.search_url, data=payload, headers=self.headers, timeout=self.timeout)
             resp.raise_for_status()
             return resp.text
         except Exception as e:
@@ -418,8 +413,8 @@ class HKReportScraper:
             if not href or not href.lower().endswith(".pdf"):
                 continue
 
-            # 统一转成绝对 URL
-            pdf_url = self.BASE_URL + href
+            # 统一转成绝对 URL（前缀从配置读取）
+            pdf_url = self.base_url + href
 
             # 尝试从标题中提取年份
             year = extract_year(title)
