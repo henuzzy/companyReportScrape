@@ -30,7 +30,10 @@ class MainWindow:
         setup_logger(log_file=self.config.get_log_file(), log_level=40)  # 40 = ERROR
         
         # 变量
-        self.file_path_var = tk.StringVar()
+        # 不同市场的股票代码文件（可分别选择，也可只选其中一部分）
+        self.a_file_path_var = tk.StringVar()
+        self.hk_file_path_var = tk.StringVar()
+        self.us_file_path_var = tk.StringVar()
         self.start_year_var = tk.StringVar()
         self.end_year_var = tk.StringVar()
         # 下载路径默认留空：避免打包后的exe展示本机绝对路径（如 dist\downloads）
@@ -55,11 +58,29 @@ class MainWindow:
         main_frame.columnconfigure(1, weight=1)
         
         row = 0
-        
-        # 文件选择
-        ttk.Label(main_frame, text="股票代码文件:").grid(row=row, column=0, sticky=tk.W, pady=5)
-        ttk.Entry(main_frame, textvariable=self.file_path_var, width=50, state='readonly').grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=5)
-        ttk.Button(main_frame, text="选择文件", command=self._select_file).grid(row=row, column=2, pady=5)
+
+        # A股代码文件
+        ttk.Label(main_frame, text="A股代码文件:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(main_frame, textvariable=self.a_file_path_var, width=50, state='readonly').grid(
+            row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=5
+        )
+        ttk.Button(main_frame, text="选择文件", command=lambda: self._select_file('CN')).grid(row=row, column=2, pady=5)
+        row += 1
+
+        # 港股代码文件
+        ttk.Label(main_frame, text="港股代码文件:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(main_frame, textvariable=self.hk_file_path_var, width=50, state='readonly').grid(
+            row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=5
+        )
+        ttk.Button(main_frame, text="选择文件", command=lambda: self._select_file('HK')).grid(row=row, column=2, pady=5)
+        row += 1
+
+        # 美股代码文件
+        ttk.Label(main_frame, text="美股代码文件:").grid(row=row, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(main_frame, textvariable=self.us_file_path_var, width=50, state='readonly').grid(
+            row=row, column=1, sticky=(tk.W, tk.E), pady=5, padx=5
+        )
+        ttk.Button(main_frame, text="选择文件", command=lambda: self._select_file('US')).grid(row=row, column=2, pady=5)
         row += 1
         
         # 年份范围
@@ -116,15 +137,27 @@ class MainWindow:
         status_label = ttk.Label(main_frame, textvariable=self.status_var, relief=tk.SUNKEN)
         status_label.grid(row=row+1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
     
-    def _select_file(self):
-        """选择股票代码文件"""
+    def _select_file(self, market: str):
+        """选择股票代码文件
+        
+        Args:
+            market: 市场标识，'CN' / 'HK' / 'US'
+        """
         file_path = filedialog.askopenfilename(
             title="选择股票代码文件",
             filetypes=[("文本文件", "*.txt"), ("所有文件", "*.*")]
         )
         if file_path:
-            self.file_path_var.set(file_path)
-            self._log(f"已选择文件: {file_path}")
+            if market == 'CN':
+                self.a_file_path_var.set(file_path)
+                prefix = "[A股]"
+            elif market == 'HK':
+                self.hk_file_path_var.set(file_path)
+                prefix = "[港股]"
+            else:
+                self.us_file_path_var.set(file_path)
+                prefix = "[美股]"
+            self._log(f"{prefix} 已选择文件: {file_path}")
     
     def _select_download_path(self):
         """选择下载路径"""
@@ -182,15 +215,24 @@ class MainWindow:
             messagebox.showwarning("警告", "下载任务正在进行中，请稍候...")
             return
         
-        # 验证输入
-        file_path = self.file_path_var.get()
-        if not file_path:
-            messagebox.showerror("错误", "请选择股票代码文件！")
+        # 验证至少选择了一个市场的股票代码文件
+        market_files = {
+            'CN': self.a_file_path_var.get().strip(),
+            'HK': self.hk_file_path_var.get().strip(),
+            'US': self.us_file_path_var.get().strip(),
+        }
+        # 过滤为空的
+        market_files = {m: p for m, p in market_files.items() if p}
+        if not market_files:
+            messagebox.showerror("错误", "请至少选择一个股票代码文件！（A股 / 港股 / 美股）")
             return
-        
-        if not Path(file_path).exists():
-            messagebox.showerror("错误", "文件不存在！")
-            return
+
+        # 校验文件是否存在
+        for market, path_str in market_files.items():
+            if not Path(path_str).exists():
+                market_name = {'CN': 'A股', 'HK': '港股', 'US': '美股'}.get(market, market)
+                messagebox.showerror("错误", f"{market_name} 代码文件不存在！")
+                return
         
         # 验证年份
         start_year = None
@@ -218,65 +260,85 @@ class MainWindow:
         self.progress_bar['value'] = 0
         self.log_text.delete(1.0, tk.END)
         
-        thread = threading.Thread(target=self._download_task, args=(file_path, start_year, end_year), daemon=True)
+        thread = threading.Thread(
+            target=self._download_task,
+            args=(market_files, start_year, end_year),
+            daemon=True
+        )
         thread.start()
-    
-    def _download_task(self, file_path, start_year, end_year):
+
+    def _download_task(self, market_files, start_year, end_year):
         """下载任务（在后台线程中运行）"""
         try:
-            # 读取股票代码
-            stock_codes = read_stock_codes(file_path)
-            if not stock_codes:
-                self.root.after(0, lambda: messagebox.showerror("错误", "未找到有效的股票代码！"))
-                return
-            
-            self.root.after(0, lambda: self._log(f"共找到 {len(stock_codes)} 个股票代码"))
-            
-            # 初始化爬虫和下载器
-            scraper = ReportScraper()
-            downloader = ReportDownloader(progress_callback=self._progress_callback)
-            
-            # 收集所有需要下载的年报
-            all_reports = []
-            for stock_code in stock_codes:
-                self.root.after(0, lambda code=stock_code: self._log(f"正在获取 {code} 的年报列表..."))
-                
-                reports = scraper.get_report_list(stock_code)
-                if not reports:
-                    self.root.after(0, lambda code=stock_code: self._log(f"{code} 未找到年报"))
+            total_success = 0
+            total_failed = 0
+
+            # 目前仅实现 A股网站逻辑；港股/美股在你提供站点规则后再补充
+            for market, file_path in market_files.items():
+                market_name = {'CN': 'A股', 'HK': '港股', 'US': '美股'}.get(market, market)
+
+                # 读取股票代码
+                stock_codes = read_stock_codes(file_path)
+                if not stock_codes:
+                    self.root.after(0, lambda mn=market_name: messagebox.showerror("错误", f"{mn} 代码文件中未找到有效的股票代码！"))
                     continue
-                
-                # 年份筛选
-                if start_year or end_year:
-                    reports = scraper.filter_reports_by_year(reports, start_year, end_year)
-                
-                # 获取PDF下载链接
-                for report in reports:
-                    pdf_url = scraper.get_pdf_url(report['detail_url'])
-                    if pdf_url:
-                        report['pdf_url'] = pdf_url
-                        all_reports.append(report)
-                    else:
-                        self.root.after(0, lambda title=report['title']: self._log(f"获取PDF链接失败: {title}"))
-            
-            if not all_reports:
-                self.root.after(0, lambda: messagebox.showinfo("提示", "未找到需要下载的年报！"))
-                return
-            
-            self.root.after(0, lambda: self._log(f"共找到 {len(all_reports)} 个年报需要下载"))
-            
-            # 开始下载
-            download_path = self.download_path_var.get().strip()
-            if not download_path:
-                # GUI留空时回退到配置默认路径（打包后为 exe 同目录下的 ./downloads）
-                download_path = str(self.config.get_download_base_path())
-            success_count, failed_count = downloader.download_reports(
-                all_reports,
-                base_path=download_path
-            )
+
+                self.root.after(0, lambda mn=market_name, cnt=len(stock_codes): self._log(f"[{mn}] 共找到 {cnt} 个股票代码"))
+
+                # 初始化爬虫和下载器
+                scraper = ReportScraper()
+                downloader = ReportDownloader(progress_callback=self._progress_callback)
+
+                # 收集所有需要下载的年报
+                all_reports = []
+                for stock_code in stock_codes:
+                    self.root.after(0, lambda code=stock_code, mn=market_name: self._log(f"[{mn}] 正在获取 {code} 的年报列表..."))
+
+                    # 目前 scraper 仍仅实现 A股逻辑；后续会根据 market 分支
+                    if market != 'CN':
+                        # 先占位，避免误用
+                        self.root.after(0, lambda mn=market_name: self._log(f"[{mn}] 暂未实现该市场的爬取逻辑"))
+                        all_reports = []
+                        break
+
+                    reports = scraper.get_report_list(stock_code)
+                    if not reports:
+                        self.root.after(0, lambda code=stock_code, mn=market_name: self._log(f"[{mn}] {code} 未找到年报"))
+                        continue
+
+                    # 年份筛选
+                    if start_year or end_year:
+                        reports = scraper.filter_reports_by_year(reports, start_year, end_year)
+
+                    # 获取PDF下载链接
+                    for report in reports:
+                        pdf_url = scraper.get_pdf_url(report['detail_url'])
+                        if pdf_url:
+                            report['pdf_url'] = pdf_url
+                            all_reports.append(report)
+                        else:
+                            self.root.after(0, lambda title=report['title'], mn=market_name: self._log(f"[{mn}] 获取PDF链接失败: {title}"))
+
+                if not all_reports:
+                    continue
+
+                self.root.after(0, lambda mn=market_name, cnt=len(all_reports): self._log(f"[{mn}] 共找到 {cnt} 个年报需要下载"))
+
+                # 开始下载
+                download_path = self.download_path_var.get().strip()
+                if not download_path:
+                    # GUI留空时回退到配置默认路径（打包后为 exe 同目录下的 ./downloads）
+                    download_path = str(self.config.get_download_base_path())
+                success_count, failed_count = downloader.download_reports(
+                    all_reports,
+                    base_path=download_path
+                )
+
+                total_success += success_count
+                total_failed += failed_count
             
             # 完成
-            message = f"下载完成！成功: {success_count}, 失败: {failed_count}"
+            message = f"下载完成！成功: {total_success}, 失败: {total_failed}"
             self.root.after(0, lambda: self._log(message))
             self.root.after(0, lambda: messagebox.showinfo("完成", message))
             self.root.after(0, lambda: self.status_var.set("下载完成"))

@@ -74,6 +74,25 @@ class Config:
             "download_base_path": "./downloads",
             "log_level": "ERROR",
             "log_file": "./logs/error.log",
+            # 按市场划分的站点配置（目前仅实现 A股，港股/美股后续补充）
+            "markets": {
+                "CN": {
+                    "url_formats": [
+                        "https://vip.stock.finance.sina.com.cn/corp/go.php/vCB_Bulletin/stockid/{code}/page_type/ndbg.phtml",
+                        "https://money.finance.sina.com.cn/corp/view/vCB_Bulletin.php?stockid={code}&type=list&page_type=ndbg"
+                    ],
+                    "base_url": "https://money.finance.sina.com.cn"
+                },
+                "HK": {
+                    "url_formats": [],
+                    "base_url": ""
+                },
+                "US": {
+                    "url_formats": [],
+                    "base_url": ""
+                }
+            },
+            # 兼容旧字段，供现有代码使用（默认为 A股配置）
             "url_formats": [
                 "https://vip.stock.finance.sina.com.cn/corp/go.php/vCB_Bulletin/stockid/{code}/page_type/ndbg.phtml",
                 "https://money.finance.sina.com.cn/corp/view/vCB_Bulletin.php?stockid={code}&type=list&page_type=ndbg"
@@ -119,10 +138,21 @@ class Config:
     
     def get_url_formats(self):
         """获取URL格式列表"""
+        # 目前 scraper 仍使用 A股逻辑，这里返回 A股的 url_formats
+        markets = self.get('markets')
+        if isinstance(markets, dict) and 'CN' in markets:
+            cn_cfg = markets['CN']
+            if isinstance(cn_cfg, dict) and 'url_formats' in cn_cfg:
+                return cn_cfg['url_formats']
         return self.get('url_formats', [])
     
     def get_base_url(self):
         """获取基础URL"""
+        markets = self.get('markets')
+        if isinstance(markets, dict) and 'CN' in markets:
+            cn_cfg = markets['CN']
+            if isinstance(cn_cfg, dict) and 'base_url' in cn_cfg:
+                return cn_cfg['base_url']
         return self.get('base_url', 'https://money.finance.sina.com.cn')
     
     def get_request_timeout(self):
