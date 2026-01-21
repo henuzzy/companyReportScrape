@@ -12,7 +12,7 @@ from typing import Optional
 from utils.config import get_config
 from utils.logger import setup_logger, get_logger
 from utils.file_handler import read_stock_codes
-from core.scraper import ReportScraper
+from core.scraper import ReportScraper, HKReportScraper
 from core.downloader import ReportDownloader
 
 
@@ -29,6 +29,9 @@ class MainWindow:
         self.config = get_config()
         setup_logger(log_file=self.config.get_log_file(), log_level=40)  # 40 = ERROR
         
+        # 日志
+        self.logger = get_logger()
+
         # 变量
         # 不同市场的股票代码文件（可分别选择，也可只选其中一部分）
         self.a_file_path_var = tk.StringVar()
@@ -234,23 +237,23 @@ class MainWindow:
                 messagebox.showerror("错误", f"{market_name} 代码文件不存在！")
                 return
         
-        # 验证年份
+        # 验证年份（A股使用年份，港股使用日期格式 YYYYMMDD，在具体市场处理中再细分校验）
         start_year = None
         end_year = None
+        start_year_str = self.start_year_var.get().strip()
+        end_year_str = self.end_year_var.get().strip()
+
+        # A股仍采用“年份数字”校验；港股在 _download_task 中单独做 YYYYMMDD 校验
         try:
-            start_year_str = self.start_year_var.get().strip()
-            end_year_str = self.end_year_var.get().strip()
-            
             if start_year_str:
                 start_year = int(start_year_str)
             if end_year_str:
                 end_year = int(end_year_str)
-            
             if start_year and end_year and start_year > end_year:
                 messagebox.showerror("错误", "起始年份不能大于结束年份！")
                 return
         except ValueError:
-            messagebox.showerror("错误", "年份格式不正确，请输入数字！")
+            messagebox.showerror("错误", "年份格式不正确，请输入数字！（例如：2020）")
             return
         
         # 在新线程中运行下载任务
@@ -285,39 +288,121 @@ class MainWindow:
 
                 self.root.after(0, lambda mn=market_name, cnt=len(stock_codes): self._log(f"[{mn}] 共找到 {cnt} 个股票代码"))
 
-                # 初始化爬虫和下载器
-                scraper = ReportScraper()
+                # 初始化下载器
                 downloader = ReportDownloader(progress_callback=self._progress_callback)
 
                 # 收集所有需要下载的年报
                 all_reports = []
-                for stock_code in stock_codes:
-                    self.root.after(0, lambda code=stock_code, mn=market_name: self._log(f"[{mn}] 正在获取 {code} 的年报列表..."))
 
-                    # 目前 scraper 仍仅实现 A股逻辑；后续会根据 market 分支
-                    if market != 'CN':
-                        # 先占位，避免误用
-                        self.root.after(0, lambda mn=market_name: self._log(f"[{mn}] 暂未实现该市场的爬取逻辑"))
-                        all_reports = []
-                        break
+                # ---------------- A股逻辑（原有新浪财经） ----------------
+                if market == 'CN':
+                    scraper = ReportScraper()
+                    for stock_code in stock_codes:
+                        self.root.after(0, lambda code=stock_code, mn=market_name: self._log(f"[{mn}] 正在获取 {code} 的年报列表..."))
 
-                    reports = scraper.get_report_list(stock_code)
-                    if not reports:
-                        self.root.after(0, lambda code=stock_code, mn=market_name: self._log(f"[{mn}] {code} 未找到年报"))
-                        continue
+                        reports = scraper.get_report_list(stock_code)
+                        if not reports:
+                            self.root.after(0, lambda code=stock_code, mn=market_name: self._log(f"[{mn}] {code} 未找到年报"))
+                            continue
 
-                    # 年份筛选
-                    if start_year or end_year:
-                        reports = scraper.filter_reports_by_year(reports, start_year, end_year)
+                        # 年份筛选（A股：使用整数年份）
+                        if start_year or end_year:
+                            reports = scraper.filter_reports_by_year(reports, start_year, end_year)
 
-                    # 获取PDF下载链接
-                    for report in reports:
-                        pdf_url = scraper.get_pdf_url(report['detail_url'])
-                        if pdf_url:
-                            report['pdf_url'] = pdf_url
-                            all_reports.append(report)
-                        else:
-                            self.root.after(0, lambda title=report['title'], mn=market_name: self._log(f"[{mn}] 获取PDF链接失败: {title}"))
+                        # 获取PDF下载链接
+                        for report in reports:
+                            pdf_url = scraper.get_pdf_url(report['detail_url'])
+                            if pdf_url:
+                                report['pdf_url'] = pdf_url
+                                all_reports.append(report)
+                            else:
+                                self.root.after(0, lambda title=report['title'], mn=market_name: self._log(f"[{mn}] 获取PDF链接失败: {title}"))
+
+                # ---------------- 港股逻辑（HKEX） ----------------
+                elif market == 'HK':
+                    hk_scraper = HKReportScraper()
+
+                    # 港股日期格式：YYYYMMDD，如果用户未填写，则默认最近10年
+                    start_date_str = self.start_year_var.get().strip()
+                    end_date_str = self.end_year_var.get().strip()
+
+                    years_for_search = []
+                    if not start_date_str and not end_date_str:
+                        # 默认最近10年
+                        import datetime
+                        current_year = datetime.datetime.now().year
+                        years_for_search = list(range(current_year - 9, current_year + 1))
+                        self.root.after(0, lambda mn=market_name: self._log(f"[{mn}] 未填写日期，默认搜索最近10年: {years_for_search[0]}-{years_for_search[-1]}"))
+                    else:
+                        # 检查 YYYYMMDD 格式
+                        def _is_valid_yyyymmdd(s: str) -> bool:
+                            return len(s) == 8 and s.isdigit()
+
+                        if start_date_str and not _is_valid_yyyymmdd(start_date_str):
+                            msg = f"[{market_name}] 起始日期格式错误（应为YYYYMMDD）：{start_date_str}"
+                            self.root.after(0, lambda m=msg: self._log(m))
+                            try:
+                                self.logger.error(msg)
+                            except Exception:
+                                pass
+                            continue
+                        if end_date_str and not _is_valid_yyyymmdd(end_date_str):
+                            msg = f"[{market_name}] 结束日期格式错误（应为YYYYMMDD）：{end_date_str}"
+                            self.root.after(0, lambda m=msg: self._log(m))
+                            try:
+                                self.logger.error(msg)
+                            except Exception:
+                                pass
+                            continue
+
+                        # 将 YYYYMMDD 转换为年份区间，供 HK 抓取使用
+                        start_year_hk = int(start_date_str[:4]) if start_date_str else None
+                        end_year_hk = int(end_date_str[:4]) if end_date_str else None
+                        if start_year_hk and end_year_hk and start_year_hk > end_year_hk:
+                            msg = f"[{market_name}] 起始日期不能晚于结束日期！"
+                            self.root.after(0, lambda m=msg: self._log(m))
+                            try:
+                                self.logger.error(msg)
+                            except Exception:
+                                pass
+                            continue
+                        if start_year_hk and end_year_hk:
+                            years_for_search = list(range(start_year_hk, end_year_hk + 1))
+                        elif start_year_hk and not end_year_hk:
+                            years_for_search = [start_year_hk]
+                        elif end_year_hk and not start_year_hk:
+                            years_for_search = [end_year_hk]
+
+                        if years_for_search:
+                            self.root.after(0, lambda mn=market_name, ys=years_for_search: self._log(f"[{mn}] 港股按年份区间搜索: {ys[0]}-{ys[-1]}"))
+
+                    for stock_code in stock_codes:
+                        # 校验港股代码样式：5位数字
+                        if not (len(stock_code) == 5 and stock_code.isdigit()):
+                            msg = f"[{market_name}] 股票代码样式不符合规范（应为5位数字，例如00700）：{stock_code}"
+                            self.root.after(0, lambda m=msg: self._log(m))
+                            try:
+                                self.logger.error(msg)
+                            except Exception:
+                                pass
+                            continue
+
+                        self.root.after(0, lambda code=stock_code, mn=market_name: self._log(f"[{mn}] 正在获取 {code} 的港股年报列表..."))
+
+                        if not years_for_search:
+                            # 若由于日期错误导致 years_for_search 为空，直接跳过
+                            continue
+
+                        reports = hk_scraper.get_reports_by_years(stock_code, years_for_search)
+                        if not reports:
+                            self.root.after(0, lambda code=stock_code, mn=market_name: self._log(f"[{mn}] {code} 未找到年报"))
+                            continue
+
+                        all_reports.extend(reports)
+
+                # ---------------- 美股逻辑（预留） ----------------
+                else:
+                    self.root.after(0, lambda mn=market_name: self._log(f"[{mn}] 暂未实现该市场的爬取逻辑"))
 
                 if not all_reports:
                     continue
@@ -331,7 +416,8 @@ class MainWindow:
                     download_path = str(self.config.get_download_base_path())
                 success_count, failed_count = downloader.download_reports(
                     all_reports,
-                    base_path=download_path
+                    base_path=download_path,
+                    market=market
                 )
 
                 total_success += success_count

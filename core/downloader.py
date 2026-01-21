@@ -36,7 +36,7 @@ class ReportDownloader:
         self.downloaded_count = 0
         self.failed_count = 0
     
-    def download_reports(self, reports, base_path=None, concurrent_downloads=None):
+    def download_reports(self, reports, base_path=None, concurrent_downloads=None, market: str = 'CN'):
         """
         并发下载年报
         
@@ -88,8 +88,8 @@ class ReportDownloader:
                 # 如果编码失败，使用ASCII安全名称
                 filename = f"report_{stock_code}.pdf"
             
-            # 获取下载目录
-            download_dir = get_download_path(base_path, stock_code)
+            # 获取下载目录（按市场划分子目录，如 A股年报/、港股年报/、美股年报/）
+            download_dir = get_download_path(base_path, stock_code, market=market)
             
             # 检查是否已下载（去重）
             if is_file_downloaded(download_dir, filename):

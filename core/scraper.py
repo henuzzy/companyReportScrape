@@ -16,7 +16,7 @@ logger = get_logger()
 
 
 class ReportScraper:
-    """年报爬虫"""
+    """A股年报爬虫（新浪财经）"""
     
     def __init__(self):
         self.config = get_config()
@@ -312,4 +312,150 @@ class ReportScraper:
             filtered.append(report)
         
         return filtered
+
+
+class HKReportScraper:
+    """
+    港股年报爬虫（香港交易所）
+    
+    逻辑基于用户提供的 test.py，实现以下步骤：
+      1. 通过 PREFIX_URL 查询 stockId
+      2. 通过 SEARCH_URL 按年份搜索公告 HTML
+      3. 解析包含 /listedco/listconews/ 且以 .pdf 结尾的链接
+    """
+
+    SEARCH_URL = "https://www1.hkexnews.hk/search/titlesearch.xhtml?lang=zh"
+    PREFIX_URL = "https://www1.hkexnews.hk/search/prefix.do"
+    BASE_URL = "https://www1.hkexnews.hk"
+
+    def __init__(self):
+        self.config = get_config()
+        self.timeout = self.config.get_request_timeout()
+        # 统一使用现有的移动端 User-Agent
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36',
+            'Referer': self.SEARCH_URL,
+        }
+
+    def _get_stock_id(self, stock_code: str) -> Optional[int]:
+        """
+        根据 5 位数字港股代码获取 stockId
+        """
+        params = {
+            "callback": "callback",
+            "lang": "ZH",
+            "type": "A",
+            "name": stock_code,
+            "market": "SEHK",
+        }
+        try:
+            resp = requests.get(self.PREFIX_URL, params=params, headers=self.headers, timeout=self.timeout)
+            resp.raise_for_status()
+
+            text = resp.text.strip()
+            start = text.find("(")
+            end = text.rfind(")")
+            if start == -1 or end == -1:
+                safe_log_error("港股 %s prefix.do 返回非法 JSONP", stock_code)
+                return None
+
+            import json  # 局部导入，避免顶层依赖变化
+            data = json.loads(text[start + 1: end])
+            stock_list = data.get("stockInfo", [])
+
+            for item in stock_list:
+                if item.get("code") == stock_code:
+                    return int(item["stockId"])
+
+            safe_log_error("港股 %s 未找到 stockId", stock_code)
+            return None
+        except Exception as e:
+            safe_log_error("获取港股 stockId 失败 %s: %s", stock_code, str(e))
+            return None
+
+    def _search_annual_report_html(self, stock_id: int, year: int) -> Optional[str]:
+        """
+        按年份搜索年报 HTML（参数设计与 test.py 保持一致）
+        """
+        payload = {
+            "lang": "ZH",
+            "category": "0",
+            "market": "SEHK",
+            "searchType": "1",
+            "documentType": "-1",
+            "t1code": "40000",
+            "t2Gcode": "-2",
+            "t2code": "40100",
+            "stockId": str(stock_id),
+            # 日期范围：year0101 ~ year+1 1231
+            "from": f"{year}0101",
+            "to": f"{year + 1}1231",
+            "MB-Daterange": "0",
+            "title": "",
+        }
+        try:
+            resp = requests.post(self.SEARCH_URL, data=payload, headers=self.headers, timeout=self.timeout)
+            resp.raise_for_status()
+            return resp.text
+        except Exception as e:
+            safe_log_error("港股 stockId=%s, year=%s 搜索年报失败: %s", str(stock_id), str(year), str(e))
+            return None
+
+    def _parse_pdf_links(self, html_text: str, stock_code: str):
+        """
+        解析 HTML 中的 PDF 链接与标题
+        """
+        try:
+            soup = BeautifulSoup(html_text, "lxml")
+        except Exception:
+            soup = BeautifulSoup(html_text, "html.parser")
+
+        results = []
+        for a in soup.select('a[href*="/listedco/listconews/"]'):
+            href = a.get("href")
+            title = a.get_text(strip=True)
+
+            if not href or not href.lower().endswith(".pdf"):
+                continue
+
+            # 统一转成绝对 URL
+            pdf_url = self.BASE_URL + href
+
+            # 尝试从标题中提取年份
+            year = extract_year(title)
+
+            results.append({
+                "title": title,
+                "pdf_url": pdf_url,
+                "year": year,
+                "stock_code": stock_code,
+                "date": None,  # HKEX 页面若需要可后续扩展
+            })
+
+        return results
+
+    def get_reports_by_years(self, stock_code: str, years):
+        """
+        根据一组年份获取指定港股的年报列表
+
+        Args:
+            stock_code: 港股代码（5位数字，如 00700）
+            years: 可迭代的年份整数列表
+
+        Returns:
+            list: 年报信息列表，元素结构与 A股 ReportScraper._parse_report_list 返回值尽量保持一致
+        """
+        stock_id = self._get_stock_id(stock_code)
+        if stock_id is None:
+            return []
+
+        all_reports = []
+        for year in years:
+            html_text = self._search_annual_report_html(stock_id, year)
+            if not html_text:
+                continue
+            reports = self._parse_pdf_links(html_text, stock_code)
+            all_reports.extend(reports)
+
+        return all_reports
 

@@ -135,18 +135,32 @@ def is_file_downloaded(download_dir, filename):
     return False
 
 
-def get_download_path(base_path, stock_code):
+def get_download_path(base_path, stock_code, market: str = 'CN'):
     """
     获取指定股票代码的下载路径
     
+    路径结构示例：
+        <base_path>/A股年报/000001/xxx.pdf
+        <base_path>/港股年报/00700/xxx.pdf
+        <base_path>/美股年报/AAPL/xxx.pdf
+    
     Args:
-        base_path: 下载基础路径
+        base_path: 下载基础路径（用户在GUI中选择，或配置中的download_base_path）
         stock_code: 股票代码
+        market: 市场标识，'CN' / 'HK' / 'US'
     
     Returns:
         Path: 下载路径
     """
-    download_path = Path(base_path) / stock_code
+    # 不同市场的子目录名称
+    market_dir_map = {
+        'CN': 'A股年报',
+        'HK': '港股年报',
+        'US': '美股年报',
+    }
+    market_dir = market_dir_map.get(market, market)
+    
+    download_path = Path(base_path) / market_dir / stock_code
     download_path.mkdir(parents=True, exist_ok=True)
     return download_path
 
