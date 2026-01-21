@@ -33,4 +33,15 @@ dist/
 !build_exe.spec  # 保留打包配置文件
 *.pyc
 
+# 测试和临时文件
 test.py
+
+# 文档文件（Word文档等，Git管理不便）
+*.docx
+*.doc
+
+# 日志文件（logs/目录已忽略，这里额外确保）
+*.log
+
+# 示例/测试数据文件（如果包含敏感信息，取消注释）
+ stocks_example.txt
